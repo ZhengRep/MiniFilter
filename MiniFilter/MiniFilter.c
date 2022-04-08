@@ -1,367 +1,63 @@
-/*++
+#include "MiniFilter.h"
+#include "CommonSetting.h"
+#include "ExcludeList.h"
 
-Module Name:
-
-    MiniFilter.c
-
-Abstract:
-
-    This is the main module of the MiniFilter miniFilter driver.
-
-Environment:
-
-    Kernel mode
-
---*/
-
-#include <fltKernel.h>
-#include <dontuse.h>
-
-#pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
-
-
-PFLT_FILTER gFilterHandle;
-ULONG_PTR OperationStatusCtx = 1;
-
-#define PTDBG_TRACE_ROUTINES            0x00000001
-#define PTDBG_TRACE_OPERATION_STATUS    0x00000002
-
-ULONG gTraceFlags = 0;
-
-
-#define PT_DBG_PRINT( _dbgLevel, _string )          \
-    (FlagOn(gTraceFlags,(_dbgLevel)) ?              \
-        DbgPrint _string :                          \
-        ((int)0))
-
-/*************************************************************************
-    Prototypes
-*************************************************************************/
-
-EXTERN_C_START
-
-DRIVER_INITIALIZE DriverEntry;
-NTSTATUS
-DriverEntry (
-    _In_ PDRIVER_OBJECT DriverObject,
-    _In_ PUNICODE_STRING RegistryPath
-    );
-
-NTSTATUS
-MiniFilterInstanceSetup (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
-    _In_ DEVICE_TYPE VolumeDeviceType,
-    _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType
-    );
-
-VOID
-MiniFilterInstanceTeardownStart (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    );
-
-VOID
-MiniFilterInstanceTeardownComplete (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    );
-
-NTSTATUS
-MiniFilterUnload (
-    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-    );
-
-NTSTATUS
-MiniFilterInstanceQueryTeardown (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
-    );
-
-FLT_PREOP_CALLBACK_STATUS
-MiniFilterPreOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
-
-VOID
-MiniFilterOperationStatusCallback (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
-    _In_ NTSTATUS OperationStatus,
-    _In_ PVOID RequesterContext
-    );
-
-FLT_POSTOP_CALLBACK_STATUS
-MiniFilterPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_opt_ PVOID CompletionContext,
-    _In_ FLT_POST_OPERATION_FLAGS Flags
-    );
-
-FLT_PREOP_CALLBACK_STATUS
-MiniFilterPreOperationNoPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
-
-BOOLEAN
-MiniFilterDoRequestOperationStatus(
-    _In_ PFLT_CALLBACK_DATA Data
-    );
-
-EXTERN_C_END
-
-//
-//  Assign text sections for each routine.
-//
-
-#ifdef ALLOC_PRAGMA
-#pragma alloc_text(INIT, DriverEntry)
-#pragma alloc_text(PAGE, MiniFilterUnload)
-#pragma alloc_text(PAGE, MiniFilterInstanceQueryTeardown)
-#pragma alloc_text(PAGE, MiniFilterInstanceSetup)
-#pragma alloc_text(PAGE, MiniFilterInstanceTeardownStart)
-#pragma alloc_text(PAGE, MiniFilterInstanceTeardownComplete)
-#endif
+//Global Variables
+BOOLEAN					__FsMonitorActive = FALSE;        //Ring3
+BOOLEAN					__FsMonitorInitialized = FALSE;   //开启或关闭文件系统监控
+BOOLEAN					__PsMonitorInitialized = FALSE;   //开启或关闭进线程监控
+PEXCLUDE_CONTEXT		__ExcludeFileContext;        //文件
+PEXCLUDE_CONTEXT		__ExcludeDirectoryContext;   //目录
 
 //
 //  operation registration
 //
 
-CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
+CONST FLT_OPERATION_REGISTRATION __Callbacks[] = {
 
-#if 0 // TODO - List all of the requests to filter.
-    { IRP_MJ_CREATE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_CREATE_NAMED_PIPE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_CLOSE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_READ,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_WRITE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_QUERY_INFORMATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SET_INFORMATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_QUERY_EA,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SET_EA,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_FLUSH_BUFFERS,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_QUERY_VOLUME_INFORMATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SET_VOLUME_INFORMATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_DIRECTORY_CONTROL,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_FILE_SYSTEM_CONTROL,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_DEVICE_CONTROL,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_INTERNAL_DEVICE_CONTROL,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SHUTDOWN,
-      0,
-      MiniFilterPreOperationNoPostOperation,
-      NULL },                               //post operations not supported
-
-    { IRP_MJ_LOCK_CONTROL,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_CLEANUP,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_CREATE_MAILSLOT,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_QUERY_SECURITY,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SET_SECURITY,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_QUERY_QUOTA,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_SET_QUOTA,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_PNP,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_RELEASE_FOR_SECTION_SYNCHRONIZATION,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_ACQUIRE_FOR_MOD_WRITE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_RELEASE_FOR_MOD_WRITE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_ACQUIRE_FOR_CC_FLUSH,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_RELEASE_FOR_CC_FLUSH,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_FAST_IO_CHECK_IF_POSSIBLE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_NETWORK_QUERY_OPEN,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_MDL_READ,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_MDL_READ_COMPLETE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_PREPARE_MDL_WRITE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_MDL_WRITE_COMPLETE,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_VOLUME_MOUNT,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-    { IRP_MJ_VOLUME_DISMOUNT,
-      0,
-      MiniFilterPreOperation,
-      MiniFilterPostOperation },
-
-#endif // TODO
-
-    { IRP_MJ_OPERATION_END }
+	{
+		IRP_MJ_READ,
+		0,
+		CreatePreviousOperation,
+		NULL
+},
+	{
+		IRP_MJ_DIRECTORY_CONTROL,
+		0,
+		DirectoryCtrlPreviousOperation,
+		DirectoryCtrlPostOperation
+},
+	{ IRP_MJ_OPERATION_END }
 };
 
 //
 //  This defines what we want to filter with FltMgr
 //
-
-CONST FLT_REGISTRATION FilterRegistration = {
-
-    sizeof( FLT_REGISTRATION ),         //  Size
-    FLT_REGISTRATION_VERSION,           //  Version
-    0,                                  //  Flags
-
-    NULL,                               //  Context
-    Callbacks,                          //  Operation callbacks
-
-    MiniFilterUnload,                           //  MiniFilterUnload
-
-    MiniFilterInstanceSetup,                    //  InstanceSetup
-    MiniFilterInstanceQueryTeardown,            //  InstanceQueryTeardown
-    MiniFilterInstanceTeardownStart,            //  InstanceTeardownStart
-    MiniFilterInstanceTeardownComplete,         //  InstanceTeardownComplete
-
-    NULL,                               //  GenerateFileName
-    NULL,                               //  GenerateDestinationFileName
-    NULL                                //  NormalizeNameComponent
-
+const FLT_CONTEXT_REGISTRATION __Context[] = {
+	{ FLT_CONTEXT_END }
 };
 
+CONST FLT_REGISTRATION __FilterRegistration = {
 
+	sizeof(FLT_REGISTRATION),         //  Size
+	FLT_REGISTRATION_VERSION,           //  Version
+	0,                                  //  Flags
+
+	__Context,                               //  Context
+	__Callbacks,                          //  Operation callbacks
+
+	MiniFilterUnload,                           //  MiniFilterUnload
+
+	MiniFilterInstanceSetup,                    //  InstanceSetup
+	MiniFilterInstanceQueryTeardown,            //  InstanceQueryTeardown
+	MiniFilterInstanceTeardownStart,            //  InstanceTeardownStart
+	MiniFilterInstanceTeardownComplete,         //  InstanceTeardownComplete
+
+	NULL,                               //  GenerateFileName
+	NULL,                               //  GenerateDestinationFileName
+	NULL                                //  NormalizeNameComponent
+
+};
 
 NTSTATUS
 MiniFilterInstanceSetup (
@@ -370,29 +66,6 @@ MiniFilterInstanceSetup (
     _In_ DEVICE_TYPE VolumeDeviceType,
     _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType
     )
-/*++
-
-Routine Description:
-
-    This routine is called whenever a new instance is created on a volume. This
-    gives us a chance to decide if we need to attach to this volume or not.
-
-    If this routine is not defined in the registration structure, automatic
-    instances are always created.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Flags describing the reason for this attach request.
-
-Return Value:
-
-    STATUS_SUCCESS - attach
-    STATUS_FLT_DO_NOT_ATTACH - do not attach
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
@@ -401,8 +74,6 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterInstanceSetup: Entered\n") );
 
     return STATUS_SUCCESS;
 }
@@ -413,74 +84,28 @@ MiniFilterInstanceQueryTeardown (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
     )
-/*++
-
-Routine Description:
-
-    This is called when an instance is being manually deleted by a
-    call to FltDetachVolume or FilterDetach thereby giving us a
-    chance to fail that detach request.
-
-    If this routine is not defined in the registration structure, explicit
-    detach requests via FltDetachVolume or FilterDetach will always be
-    failed.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Indicating where this detach request came from.
-
-Return Value:
-
-    Returns the status of this operation.
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterInstanceQueryTeardown: Entered\n") );
 
     return STATUS_SUCCESS;
 }
 
 
 VOID
-MiniFilterInstanceTeardownStart (
+MiniFilterInstanceTeardownStart(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    )
-/*++
-
-Routine Description:
-
-    This routine is called at the start of instance teardown.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Reason why this instance is being deleted.
-
-Return Value:
-
-    None.
-
---*/
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( Flags );
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterInstanceTeardownStart: Entered\n") );
 }
 
 
@@ -489,32 +114,12 @@ MiniFilterInstanceTeardownComplete (
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
     )
-/*++
-
-Routine Description:
-
-    This routine is called at the end of instance teardown.
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance and its associated volume.
-
-    Flags - Reason why this instance is being deleted.
-
-Return Value:
-
-    None.
-
---*/
 {
     UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterInstanceTeardownComplete: Entered\n") );
 }
 
 
@@ -527,363 +132,757 @@ DriverEntry (
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
     )
-/*++
-
-Routine Description:
-
-    This is the initialization routine for this miniFilter driver.  This
-    registers with FltMgr and initializes all global data structures.
-
-Arguments:
-
-    DriverObject - Pointer to driver object created by the system to
-        represent this driver.
-
-    RegistryPath - Unicode string identifying where the parameters for this
-        driver are located in the registry.
-
-Return Value:
-
-    Routine can return non success error codes.
-
---*/
 {
     NTSTATUS status;
 
     UNREFERENCED_PARAMETER( RegistryPath );
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!DriverEntry: Entered\n") );
-
-    //
-    //  Register with FltMgr to tell it our callback routines
-    //
-
-    status = FltRegisterFilter( DriverObject,
-                                &FilterRegistration,
-                                &gFilterHandle );
-
-    FLT_ASSERT( NT_SUCCESS( status ) );
-
-    if (NT_SUCCESS( status )) {
-
-        //
-        //  Start filtering i/o
-        //
-
-        status = FltStartFiltering( gFilterHandle );
-
-        if (!NT_SUCCESS( status )) {
-
-            FltUnregisterFilter( gFilterHandle );
-        }
+    status = InitializeMiniFilter(DriverObject);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("InitailizeMiniFilter Error.\n");
     }
+
+    DriverObject->DriverUnload = DriverUnload;
 
     return status;
 }
 
+VOID DriverUnload(_In_ PDRIVER_OBJECT DriverObject)
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+    DestroyMiniFilter();
+}
+
+NTSTATUS InitializeMiniFilter(PDRIVER_OBJECT DriverObject)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	//构建文件隐藏的黑白名单
+	Status = InitializeExcludeListContext(&__ExcludeFileContext);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("InitializeExcludeListContext() Error\r\n");
+		return Status;
+	}
+	//加入测试数据
+	int i;
+	UNICODE_STRING TempStr;
+	for (i = 0; __ExcludeFiles[i]; i++)
+	{
+		RtlInitUnicodeString(&TempStr, __ExcludeFiles[i]);
+		AddExcludeFileList(__ExcludeFileContext, &TempStr);
+	}
+	//构建目录隐藏的黑白名单
+	Status = InitializeExcludeListContext(&__ExcludeDirectoryContext);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("SeInitializeExcludeListContext() Error\r\n");
+		DestroyExcludeListContext(__ExcludeFileContext);
+		return Status;
+	}
+	//加入测试数据
+	for (i = 0; __ExcludeDirectorys[i]; i++)
+	{
+		RtlInitUnicodeString(&TempStr, __ExcludeDirectorys[i]);
+		AddExcludeDirectoryList(__ExcludeDirectoryContext, &TempStr);
+	}
+	//注册过滤函数
+	Status = FltRegisterFilter(DriverObject, &__FilterRegistration, &__FilterHandle);
+	if (NT_SUCCESS(Status))
+	{
+		Status = FltStartFiltering(__FilterHandle);
+		if (!NT_SUCCESS(Status))
+		{
+			DbgPrint("FltStartFiltering() Error\r\n");
+			FltUnregisterFilter(__FilterHandle);
+		}
+	}
+	else
+	{
+		DbgPrint("FltRegisterFilter() Error\r\n");
+	}
+
+	if (!NT_SUCCESS(Status))
+	{
+		DestroyExcludeListContext(__ExcludeFileContext);
+		DestroyExcludeListContext(__ExcludeDirectoryContext);
+		return Status;
+	}
+
+	__FsMonitorInitialized = TRUE;   //当前驱动具有文件过滤功能
+	__FsMonitorActive = TRUE;        //文件过滤功能是否开启      在IRP_MJ_DEVICE_CONTROL派遣函数中设置
+	return Status;
+}
+
+NTSTATUS DestroyMiniFilter()
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	if (!__FsMonitorInitialized)
+	{
+		return STATUS_NOT_FOUND;
+	}
+
+	FltUnregisterFilter(__FilterHandle);
+	__FilterHandle = NULL;
+
+	DestroyExcludeListContext(__ExcludeFileContext);
+	DestroyExcludeListContext(__ExcludeDirectoryContext);
+	__FsMonitorInitialized = FALSE;
+	__FsMonitorActive = FALSE;
+	return status;
+}
+
+BOOLEAN IsMiniFilterActive()
+{
+	return (__FsMonitorActive ? TRUE : FALSE);
+}
+
+BOOLEAN IsProcessExcluded(HANDLE ProcessIdentify)
+{
+	BOOLEAN IsOk = TRUE;
+	return IsOk;
+}
+
 NTSTATUS
-MiniFilterUnload (
-    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-    )
-/*++
-
-Routine Description:
-
-    This is the unload routine for this miniFilter driver. This is called
-    when the minifilter is about to be unloaded. We can fail this unload
-    request if this is not a mandatory unload indicated by the Flags
-    parameter.
-
-Arguments:
-
-    Flags - Indicating if this is a mandatory unload.
-
-Return Value:
-
-    Returns STATUS_SUCCESS.
-
---*/
+MiniFilterUnload(
+	_In_ FLT_FILTER_UNLOAD_FLAGS Flags
+)
 {
-    UNREFERENCED_PARAMETER( Flags );
+	UNREFERENCED_PARAMETER(Flags);
 
-    PAGED_CODE();
+	PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterUnload: Entered\n") );
-
-    FltUnregisterFilter( gFilterHandle );
-
-    return STATUS_SUCCESS;
+	return STATUS_SUCCESS;
 }
 
 
-/*************************************************************************
-    MiniFilter callback routines.
-*************************************************************************/
-FLT_PREOP_CALLBACK_STATUS
-MiniFilterPreOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is a pre-operation dispatch routine for this miniFilter.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The context for the completion routine for this
-        operation.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
+FLT_PREOP_CALLBACK_STATUS CreatePreviousOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
 {
-    NTSTATUS status;
+	NTSTATUS Status;
+	//驱动监控是否开启
+	if (!IsMiniFilterActive())
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
+	DbgPrint("%wZ (options:%x)", &Data->Iopb->TargetFileObject->FileName, Data->Iopb->Parameters.Create.Options);
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterPreOperation: Entered\n") );
+	//进程是否在黑白名单
+	if (!IsProcessExcluded(PsGetCurrentProcessId()))
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
-    //
-    //  See if this is an operation we would like the operation status
-    //  for.  If so request it.
-    //
-    //  NOTE: most filters do NOT need to do this.  You only need to make
-    //        this call if, for example, you need to know if the oplock was
-    //        actually granted.
-    //
+	UINT32 Options = Data->Iopb->Parameters.Create.Options & 0x00FFFFFF;
 
-    if (MiniFilterDoRequestOperationStatus( Data )) {
+	PFLT_FILE_NAME_INFORMATION FltFileNameInfo;
+	Status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &FltFileNameInfo);
+	if (!NT_SUCCESS(Status))
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
-        status = FltRequestOperationStatusCallback( Data,
-                                                    MiniFilterOperationStatusCallback,
-                                                    (PVOID)(++OperationStatusCtx) );
-        if (!NT_SUCCESS(status)) {
+	BOOLEAN NeededPrevent = FALSE;
+	if (!(Options & FILE_DIRECTORY_FILE))    //不是目录
+	{
+		// If it is create file event
+		if (CheckExcludeFileList(__ExcludeFileContext, &(FltFileNameInfo->Name)))   //判断文件是否在黑白名单中
+		{
+			NeededPrevent = TRUE;
+		}
+	}
 
-            PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
-                          ("MiniFilter!MiniFilterPreOperation: FltRequestOperationStatusCallback Failed, status=%08x\n",
-                           status) );
-        }
-    }
+	// If it is create directory/file event
+	if (!NeededPrevent && CheckExcludeFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name))   //判断目录是否在黑白名单中
+	{
+		NeededPrevent = TRUE;
+	}
 
-    // This template code does not do anything with the callbackData, but
-    // rather returns FLT_PREOP_SUCCESS_WITH_CALLBACK.
-    // This passes the request down to the next miniFilter in the chain.
+	FltReleaseFileNameInformation(FltFileNameInfo);
+	if (NeededPrevent)
+	{
+		Data->IoStatus.Status = STATUS_NO_SUCH_FILE;    //Io管理返回给Ring3的结果   
+		return FLT_PREOP_COMPLETE;
+	}
+	return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
 
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+FLT_PREOP_CALLBACK_STATUS DirectoryCtrlPreviousOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
+{
+	if (!IsMiniFilterActive())
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
+
+	if (Data->Iopb->MinorFunction != IRP_MN_QUERY_DIRECTORY)   //如果不是查询 向下发送Irp 并且不需要 调用Post函数
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
+
+	switch (Data->Iopb->Parameters.DirectoryControl.QueryDirectory.FileInformationClass)
+	{
+	case FileIdFullDirectoryInformation:
+	case FileIdBothDirectoryInformation:
+	case FileBothDirectoryInformation:
+	case FileDirectoryInformation:
+	case FileFullDirectoryInformation:
+	case FileNamesInformation:
+		break;
+	default:
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
+
+	//如果是查询 向下发送Irp 并且需要 调用Post函数
+	return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+FLT_POSTOP_CALLBACK_STATUS DirectoryCtrlPostOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, FLT_POST_OPERATION_FLAGS Flags)
+{
+	NTSTATUS Status;
+	if (!IsMiniFilterActive())
+	{
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
+
+	if (!NT_SUCCESS(Data->IoStatus.Status))
+	{
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
+
+	if (!IsProcessExcluded(PsGetCurrentProcessId()))
+	{
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
+
+	PFLT_FILE_NAME_INFORMATION FltFileNameInfo;
+	Status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &FltFileNameInfo);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("FltGetFileNameInformation() Failed with Code:%08x", Status);
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
+
+	__try
+	{
+		Status = STATUS_SUCCESS;
+		
+		PFLT_PARAMETERS	FltParameters = &Data->Iopb->Parameters;
+		switch (FltParameters->DirectoryControl.QueryDirectory.FileInformationClass)
+		{
+		case FileFullDirectoryInformation:
+		{
+			Status = CleanFileFullDirectoryInformation((PFILE_FULL_DIR_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer,FltFileNameInfo);
+			break;
+		}
+		case FileBothDirectoryInformation:
+		{
+			Status = CleanFileBothDirectoryInformation((PFILE_BOTH_DIR_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer, FltFileNameInfo);
+			break;
+		}
+		case FileDirectoryInformation:
+		{
+			Status = CleanFileDirectoryInformation((PFILE_DIRECTORY_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer, FltFileNameInfo);
+			break;
+		}
+		case FileIdFullDirectoryInformation:
+		{
+			Status = CleanFileIdFullDirectoryInformation((PFILE_ID_FULL_DIR_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer, FltFileNameInfo);
+			break;
+		}
+		case FileIdBothDirectoryInformation:
+		{
+			Status = CleanFileIdBothDirectoryInformation((PFILE_ID_BOTH_DIR_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer, FltFileNameInfo);
+			break;
+		}
+		case FileNamesInformation:
+		{
+			Status = CleanFileNamesInformation((PFILE_NAMES_INFORMATION)FltParameters->DirectoryControl.QueryDirectory.DirectoryBuffer, FltFileNameInfo);
+			break;
+		}
+		}
+
+		Data->IoStatus.Status = Status;
+	}
+	__finally
+	{
+		FltReleaseFileNameInformation(FltFileNameInfo);
+	}
+
+	return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
 
-
-VOID
-MiniFilterOperationStatusCallback (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
-    _In_ NTSTATUS OperationStatus,
-    _In_ PVOID RequesterContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is called when the given operation returns from the call
-    to IoCallDriver.  This is useful for operations where STATUS_PENDING
-    means the operation was successfully queued.  This is useful for OpLocks
-    and directory change notification operations.
-
-    This callback is called in the context of the originating thread and will
-    never be called at DPC level.  The file object has been correctly
-    referenced so that you can access it.  It will be automatically
-    dereferenced upon return.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    RequesterContext - The context for the completion routine for this
-        operation.
-
-    OperationStatus -
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
+NTSTATUS CleanFileFullDirectoryInformation(PFILE_FULL_DIR_INFORMATION FileFullDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
+	NTSTATUS Status = STATUS_SUCCESS;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
+	PFILE_FULL_DIR_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileFullDirInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileFullDirInfo->FileNameLength;
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterOperationStatusCallback: Entered\n") );
+		if (FileFullDirInfo->FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		else
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltFileNameInfo->Name, &TempStr);
+		}
 
-    PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
-                  ("MiniFilter!MiniFilterOperationStatusCallback: Status=%08x ctx=%p IrpMj=%02x.%02x \"%s\"\n",
-                   OperationStatus,
-                   RequesterContext,
-                   ParameterSnapshot->MajorFunction,
-                   ParameterSnapshot->MinorFunction,
-                   FltGetIrpName(ParameterSnapshot->MajorFunction)) );
+		if (IsMatched)
+		{
+			BOOLEAN IsOk = FALSE;
+			
+			if (Previous != NULL)
+			{
+				if (FileFullDirInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileFullDirInfo->NextEntryOffset;
+					NextEntryOffset = FileFullDirInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
+
+				RtlFillMemory(FileFullDirInfo, sizeof(FILE_FULL_DIR_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileFullDirInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_FULL_DIR_INFORMATION)((PUCHAR)FileFullDirInfo + FileFullDirInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_FULL_DIR_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
+					MoveLength += FIELD_OFFSET(FILE_FULL_DIR_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileFullDirInfo, (PUCHAR)FileFullDirInfo + FileFullDirInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
+			if (IsOk)
+			{
+				return Status;
+			}
+
+			FileFullDirInfo = (PFILE_FULL_DIR_INFORMATION)((PCHAR)FileFullDirInfo + NextEntryOffset);
+			continue;
+		}
+
+		NextEntryOffset = FileFullDirInfo->NextEntryOffset;
+		Previous = FileFullDirInfo;
+		FileFullDirInfo = (PFILE_FULL_DIR_INFORMATION)((PCHAR)FileFullDirInfo + NextEntryOffset);
+
+		if (NextEntryOffset == 0)
+		{
+			IsLoop = FALSE;
+		}
+
+	} while (IsLoop);
+	return Status;
 }
 
-
-FLT_POSTOP_CALLBACK_STATUS
-MiniFilterPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_opt_ PVOID CompletionContext,
-    _In_ FLT_POST_OPERATION_FLAGS Flags
-    )
-/*++
-
-Routine Description:
-
-    This routine is the post-operation completion routine for this
-    miniFilter.
-
-    This is non-pageable because it may be called at DPC level.
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The completion context set in the pre-operation routine.
-
-    Flags - Denotes whether the completion is successful or is being drained.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
+NTSTATUS CleanFileBothDirectoryInformation(PFILE_BOTH_DIR_INFORMATION FileBothInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
-    UNREFERENCED_PARAMETER( Data );
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
-    UNREFERENCED_PARAMETER( Flags );
+	NTSTATUS Status;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
+	PFILE_BOTH_DIR_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileBothInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileBothInfo->FileNameLength;
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterPostOperation: Entered\n") );
+		if (FileBothInfo->FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		else
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltFileNameInfo->Name, &TempStr);
+		}
 
-    return FLT_POSTOP_FINISHED_PROCESSING;
+		if (IsMatched)
+		{
+			BOOLEAN IsOk = FALSE;
+			if (Previous != NULL)
+			{
+				if (FileBothInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileBothInfo->NextEntryOffset;
+					NextEntryOffset = FileBothInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
+				RtlFillMemory(FileBothInfo, sizeof(FILE_BOTH_DIR_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileBothInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_BOTH_DIR_INFORMATION)((PUCHAR)FileBothInfo + FileBothInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_BOTH_DIR_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
+					MoveLength += FIELD_OFFSET(FILE_BOTH_DIR_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileBothInfo, (PUCHAR)FileBothInfo + FileBothInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
+
+			if (IsOk)
+			{
+				return Status;
+			}
+
+			FileBothInfo = (PFILE_BOTH_DIR_INFORMATION)((PCHAR)FileBothInfo + NextEntryOffset);
+			continue;
+		}
+
+		NextEntryOffset = FileBothInfo->NextEntryOffset;
+		Previous = FileBothInfo;
+		FileBothInfo = (PFILE_BOTH_DIR_INFORMATION)((PCHAR)FileBothInfo + NextEntryOffset);
+
+		if (NextEntryOffset == 0)
+		{
+			IsLoop = FALSE;
+		}
+	} while (IsLoop);
+	return Status;
 }
 
-
-FLT_PREOP_CALLBACK_STATUS
-MiniFilterPreOperationNoPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is a pre-operation dispatch routine for this miniFilter.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The context for the completion routine for this
-        operation.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
+NTSTATUS CleanFileDirectoryInformation(PFILE_DIRECTORY_INFORMATION FileDirectoryInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
-    UNREFERENCED_PARAMETER( Data );
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
+	NTSTATUS Status;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
+	PFILE_DIRECTORY_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileDirectoryInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileDirectoryInfo->FileNameLength;
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("MiniFilter!MiniFilterPreOperationNoPostOperation: Entered\n") );
+		if (FileDirectoryInfo->FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		else
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltFileNameInfo->Name, &TempStr);
+		}
 
-    // This template code does not do anything with the callbackData, but
-    // rather returns FLT_PREOP_SUCCESS_NO_CALLBACK.
-    // This passes the request down to the next miniFilter in the chain.
+		if (IsMatched)
+		{
+			BOOLEAN IsOk = FALSE;
+			if (Previous != NULL)
+			{
+				if (FileDirectoryInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileDirectoryInfo->NextEntryOffset;
+					NextEntryOffset = FileDirectoryInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
+				RtlFillMemory(FileDirectoryInfo, sizeof(FILE_BOTH_DIR_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileDirectoryInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_DIRECTORY_INFORMATION)((PUCHAR)FileDirectoryInfo + FileDirectoryInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_DIRECTORY_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
+					MoveLength += FIELD_OFFSET(FILE_DIRECTORY_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileDirectoryInfo, (PUCHAR)FileDirectoryInfo + FileDirectoryInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
 
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+			if (IsOk)
+			{
+				return Status;
+			}
+
+			FileDirectoryInfo = (PFILE_DIRECTORY_INFORMATION)((PCHAR)FileDirectoryInfo + NextEntryOffset);
+			continue;
+		}
+
+		NextEntryOffset = FileDirectoryInfo->NextEntryOffset;
+		Previous = FileDirectoryInfo;
+		FileDirectoryInfo = (PFILE_DIRECTORY_INFORMATION)((PCHAR)FileDirectoryInfo + NextEntryOffset);
+
+		if (NextEntryOffset == 0)
+		{
+			IsLoop = FALSE;
+		}
+	} while (IsLoop);
+	return Status;
 }
 
-
-BOOLEAN
-MiniFilterDoRequestOperationStatus(
-    _In_ PFLT_CALLBACK_DATA Data
-    )
-/*++
-
-Routine Description:
-
-    This identifies those operations we want the operation status for.  These
-    are typically operations that return STATUS_PENDING as a normal completion
-    status.
-
-Arguments:
-
-Return Value:
-
-    TRUE - If we want the operation status
-    FALSE - If we don't
-
---*/
+NTSTATUS CleanFileIdFullDirectoryInformation(PFILE_ID_FULL_DIR_INFORMATION FileIdFullDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
-    PFLT_IO_PARAMETER_BLOCK iopb = Data->Iopb;
+	NTSTATUS Status;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
+	PFILE_ID_FULL_DIR_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileIdFullDirInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileIdFullDirInfo->FileNameLength;
 
-    //
-    //  return boolean state based on which operations we are interested in
-    //
+		if (FileIdFullDirInfo->FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		else
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		if (IsMatched)
+		{
+			BOOLEAN IsOk = FALSE;
+			if (Previous != NULL)
+			{
+				if (FileIdFullDirInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileIdFullDirInfo->NextEntryOffset;
+					NextEntryOffset = FileIdFullDirInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
 
-    return (BOOLEAN)
+				RtlFillMemory(FileIdFullDirInfo, sizeof(FILE_ID_FULL_DIR_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileIdFullDirInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_ID_FULL_DIR_INFORMATION)((PUCHAR)FileIdFullDirInfo + FileIdFullDirInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_ID_FULL_DIR_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
 
-            //
-            //  Check for oplock operations
-            //
+					MoveLength += FIELD_OFFSET(FILE_ID_FULL_DIR_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileIdFullDirInfo, (PUCHAR)FileIdFullDirInfo + FileIdFullDirInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
 
-             (((iopb->MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL) &&
-               ((iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)  ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)   ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_1) ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_2)))
+			if (IsOk)
+				return Status;
 
-              ||
+			FileIdFullDirInfo = (PFILE_ID_FULL_DIR_INFORMATION)((PCHAR)FileIdFullDirInfo + NextEntryOffset);
+			continue;
+		}
 
-              //
-              //    Check for directy change notification
-              //
+		NextEntryOffset = FileIdFullDirInfo->NextEntryOffset;
+		Previous = FileIdFullDirInfo;
+		FileIdFullDirInfo = (PFILE_ID_FULL_DIR_INFORMATION)((PCHAR)FileIdFullDirInfo + NextEntryOffset);
 
-              ((iopb->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) &&
-               (iopb->MinorFunction == IRP_MN_NOTIFY_CHANGE_DIRECTORY))
-             );
+		if (NextEntryOffset == 0)
+			IsLoop = FALSE;
+	} while (IsLoop);
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS CleanFileIdBothDirectoryInformation(PFILE_ID_BOTH_DIR_INFORMATION FileIdBothDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
+{
+	NTSTATUS Status;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
+	PFILE_ID_BOTH_DIR_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileIdBothDirInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileIdBothDirInfo->FileNameLength;
+
+		if (FileIdBothDirInfo->FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeDirectoryContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		else
+		{
+			IsMatched = CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltFileNameInfo->Name, &TempStr);
+		}
+		if (IsMatched)
+		{
+			BOOLEAN IsOk = FALSE;
+
+			if (Previous != NULL)
+			{
+				if (FileIdBothDirInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileIdBothDirInfo->NextEntryOffset;
+					NextEntryOffset = FileIdBothDirInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
+
+				RtlFillMemory(FileIdBothDirInfo, sizeof(FILE_ID_BOTH_DIR_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileIdBothDirInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_ID_BOTH_DIR_INFORMATION)((PUCHAR)FileIdBothDirInfo + FileIdBothDirInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_ID_BOTH_DIR_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
+
+					MoveLength += FIELD_OFFSET(FILE_ID_BOTH_DIR_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileIdBothDirInfo, (PUCHAR)FileIdBothDirInfo + FileIdBothDirInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
+
+
+			if (IsOk)
+				return Status;
+
+			FileIdBothDirInfo = (PFILE_ID_BOTH_DIR_INFORMATION)((PCHAR)FileIdBothDirInfo + NextEntryOffset);
+			continue;
+		}
+
+		NextEntryOffset = FileIdBothDirInfo->NextEntryOffset;
+		Previous = FileIdBothDirInfo;
+		FileIdBothDirInfo = (PFILE_ID_BOTH_DIR_INFORMATION)((PCHAR)FileIdBothDirInfo + NextEntryOffset);
+
+		if (NextEntryOffset == 0)
+			IsLoop = FALSE;
+	} while (IsLoop);
+
+	return Status;
+}
+
+NTSTATUS CleanFileNamesInformation(PFILE_NAMES_INFORMATION FileNamesInfo, PFLT_FILE_NAME_INFORMATION FltNameInfo)
+{
+	NTSTATUS Status;
+	UNICODE_STRING TempStr;
+	BOOLEAN IsLoop = TRUE;
+	PFILE_NAMES_INFORMATION Previous = NULL, Next;
+	ULONG32 NextEntryOffset, MoveLength;
+	do
+	{
+		TempStr.Buffer = FileNamesInfo->FileName;
+		TempStr.MaximumLength = TempStr.Length = (USHORT)FileNamesInfo->FileNameLength;
+
+		if (CheckExcludeDirecoryFileList(__ExcludeFileContext, &FltNameInfo->Name, &TempStr))
+		{
+			BOOLEAN IsOk = FALSE;
+			if (Previous != NULL)
+			{
+				if (FileNamesInfo->NextEntryOffset != 0)
+				{
+					Previous->NextEntryOffset += FileNamesInfo->NextEntryOffset;
+					NextEntryOffset = FileNamesInfo->NextEntryOffset;
+				}
+				else
+				{
+					Previous->NextEntryOffset = 0;
+					Status = STATUS_SUCCESS;
+					IsOk = TRUE;
+				}
+
+				RtlFillMemory(FileNamesInfo, sizeof(FILE_NAMES_INFORMATION), 0);
+			}
+			else
+			{
+				if (FileNamesInfo->NextEntryOffset != 0)
+				{
+					Next = (PFILE_NAMES_INFORMATION)((PUCHAR)FileNamesInfo + FileNamesInfo->NextEntryOffset);
+					MoveLength = 0;
+					while (Next->NextEntryOffset != 0)
+					{
+						MoveLength += Next->NextEntryOffset;
+						Next = (PFILE_NAMES_INFORMATION)((PUCHAR)Next + Next->NextEntryOffset);
+					}
+
+					MoveLength += FIELD_OFFSET(FILE_NAMES_INFORMATION, FileName) + Next->FileNameLength;
+					RtlMoveMemory(FileNamesInfo, (PUCHAR)FileNamesInfo + FileNamesInfo->NextEntryOffset, MoveLength);//continue
+				}
+				else
+				{
+					Status = STATUS_NO_MORE_ENTRIES;
+					IsOk = TRUE;
+				}
+			}
+
+		if (IsOk)
+			return Status;
+
+		FileNamesInfo = (PFILE_NAMES_INFORMATION)((PCHAR)FileNamesInfo + NextEntryOffset);
+		continue;
+		}
+
+		NextEntryOffset = FileNamesInfo->NextEntryOffset;
+		Previous = FileNamesInfo;
+		FileNamesInfo = (PFILE_NAMES_INFORMATION)((PCHAR)FileNamesInfo + NextEntryOffset);
+
+		if (NextEntryOffset == 0)
+			IsLoop = FALSE;
+	} while (IsLoop);
+
+	return STATUS_SUCCESS;
 }

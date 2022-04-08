@@ -10,7 +10,7 @@ Signature   = "$Windows NT$"
 ;Class = "_TODO_Change_Class_appropriately_"
 ;ClassGuid = {_TODO_Change_ClassGuid_appropriately_}
 Provider    = %%Zheng%%
-DriverVer   = 1004/07/2022,17.24.11.111
+DriverVer = 04/07/2022,17.47.57.942
 CatalogFile = MiniFilter.cat
 
 [DestinationDirs]

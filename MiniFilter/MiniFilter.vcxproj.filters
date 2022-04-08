@@ -27,7 +27,7 @@
     <ClCompile Include="MiniFilter.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ExcludeList.cpp">
+    <ClCompile Include="ExcludeList.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -41,6 +41,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ExcludeList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CommonSetting.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,0 +1,26 @@
+﻿  Building 'MiniFilter' with toolset 'WindowsKernelModeDriver10.0' and the 'Desktop' target platform.
+  Stamping Debug\MiniFilter.inf
+  Stamping [Version] section with DriverVer=04/07/2022,17.47.57.942
+E:\Vstudio2019\MiniFilter\MiniFilter\MiniFilter.inf : warning 1420: [DefaultInstall]-based INF cannot be processed as Primitive.
+E:\Vstudio2019\MiniFilter\MiniFilter\MiniFilter.inf(24-24): warning 1421: Section [DefaultInstall] should have an architecture decoration.
+E:\Vstudio2019\MiniFilter\MiniFilter\MiniFilter.inf(35-35): warning 1421: Section [DefaultUninstall] should have an architecture decoration.
+E:\Vstudio2019\MiniFilter\MiniFilter\MiniFilter.inf(73-73): warning 1205: Section [MiniFilter.DriverFiles] referenced from DelFiles and CopyFiles directive.
+  MiniFilter.c
+  MiniFilter.vcxproj -> E:\Vstudio2019\MiniFilter\Debug\MiniFilter.sys
+  Done Adding Additional Store
+  Successfully signed: E:\Vstudio2019\MiniFilter\Debug\MiniFilter.sys
+  
+  ........................
+  Signability test complete.
+  
+  Errors:
+  None
+  
+  Warnings:
+  None
+  
+  Catalog generation complete.
+  E:\Vstudio2019\MiniFilter\Debug\MiniFilter\minifilter.cat
+  Done Adding Additional Store
+  Successfully signed: E:\Vstudio2019\MiniFilter\Debug\MiniFilter\minifilter.cat
+  
