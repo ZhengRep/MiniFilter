@@ -10,7 +10,7 @@ PEXCLUDE_CONTEXT		__ExcludeFileContext;        //нд╪Ч
 PEXCLUDE_CONTEXT		__ExcludeDirectoryContext;   //д©б╪
 
 //
-//  operation registration
+//  operation registration 
 //
 
 CONST FLT_OPERATION_REGISTRATION __Callbacks[] = {
@@ -56,7 +56,6 @@ CONST FLT_REGISTRATION __FilterRegistration = {
 	NULL,                               //  GenerateFileName
 	NULL,                               //  GenerateDestinationFileName
 	NULL                                //  NormalizeNameComponent
-
 };
 
 NTSTATUS

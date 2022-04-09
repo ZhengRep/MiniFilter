@@ -10,11 +10,11 @@ ULONG_PTR OperationStatusCtx = 1;
 
 CONST PWCHAR __ExcludeFiles[] =
 {
-	L"\\Device\\HarddiskVolume1\\TestFileMiniFilter.txt",
+	L"\\Device\\HarddiskVolume0\\TestFileMiniFilter.txt",
 	NULL
 };
 CONST PWCHAR __ExcludeDirectorys[] = {
-	L"\\Device\\HarddiskVolume1\\TestDirectoryMiniFilter",
+	L"\\Device\\HarddiskVolume0\\TestDirectoryMiniFilter",
 	NULL
 };
 
