@@ -136,6 +136,8 @@ DriverEntry (
 
     UNREFERENCED_PARAMETER( RegistryPath );
 
+	DbgPrint("Driver Entry");
+
     status = InitializeMiniFilter(DriverObject);
     if (!NT_SUCCESS(status))
     {
@@ -155,6 +157,7 @@ VOID DriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 
 NTSTATUS InitializeMiniFilter(PDRIVER_OBJECT DriverObject)
 {
+	PAGED_CODE();
 	NTSTATUS Status = STATUS_SUCCESS;
 	//构建文件隐藏的黑白名单
 	Status = InitializeExcludeListContext(&__ExcludeFileContext);
@@ -215,6 +218,7 @@ NTSTATUS InitializeMiniFilter(PDRIVER_OBJECT DriverObject)
 
 NTSTATUS DestroyMiniFilter()
 {
+	PAGED_CODE();
 	NTSTATUS status = STATUS_SUCCESS;
 	if (!__FsMonitorInitialized)
 	{
@@ -233,11 +237,13 @@ NTSTATUS DestroyMiniFilter()
 
 BOOLEAN IsMiniFilterActive()
 {
+	PAGED_CODE();
 	return (__FsMonitorActive ? TRUE : FALSE);
 }
 
 BOOLEAN IsProcessExcluded(HANDLE ProcessIdentify)
 {
+	PAGED_CODE();
 	BOOLEAN IsOk = TRUE;
 	return IsOk;
 }
@@ -257,6 +263,8 @@ MiniFilterUnload(
 
 FLT_PREOP_CALLBACK_STATUS CreatePreviousOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
 {
+	PAGED_CODE();
+
 	NTSTATUS Status;
 	//驱动监控是否开启
 	if (!IsMiniFilterActive())
@@ -308,6 +316,7 @@ FLT_PREOP_CALLBACK_STATUS CreatePreviousOperation(PFLT_CALLBACK_DATA Data, PCFLT
 
 FLT_PREOP_CALLBACK_STATUS DirectoryCtrlPreviousOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext)
 {
+	PAGED_CODE();
 	if (!IsMiniFilterActive())
 	{
 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
@@ -336,6 +345,7 @@ FLT_PREOP_CALLBACK_STATUS DirectoryCtrlPreviousOperation(PFLT_CALLBACK_DATA Data
 }
 FLT_POSTOP_CALLBACK_STATUS DirectoryCtrlPostOperation(PFLT_CALLBACK_DATA Data, PCFLT_RELATED_OBJECTS FltObjects, PVOID* CompletionContext, FLT_POST_OPERATION_FLAGS Flags)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	if (!IsMiniFilterActive())
 	{
@@ -412,6 +422,7 @@ FLT_POSTOP_CALLBACK_STATUS DirectoryCtrlPostOperation(PFLT_CALLBACK_DATA Data, P
 
 NTSTATUS CleanFileFullDirectoryInformation(PFILE_FULL_DIR_INFORMATION FileFullDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status = STATUS_SUCCESS;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
@@ -495,6 +506,7 @@ NTSTATUS CleanFileFullDirectoryInformation(PFILE_FULL_DIR_INFORMATION FileFullDi
 
 NTSTATUS CleanFileBothDirectoryInformation(PFILE_BOTH_DIR_INFORMATION FileBothInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
@@ -576,6 +588,7 @@ NTSTATUS CleanFileBothDirectoryInformation(PFILE_BOTH_DIR_INFORMATION FileBothIn
 
 NTSTATUS CleanFileDirectoryInformation(PFILE_DIRECTORY_INFORMATION FileDirectoryInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
@@ -657,6 +670,7 @@ NTSTATUS CleanFileDirectoryInformation(PFILE_DIRECTORY_INFORMATION FileDirectory
 
 NTSTATUS CleanFileIdFullDirectoryInformation(PFILE_ID_FULL_DIR_INFORMATION FileIdFullDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
@@ -736,6 +750,7 @@ NTSTATUS CleanFileIdFullDirectoryInformation(PFILE_ID_FULL_DIR_INFORMATION FileI
 
 NTSTATUS CleanFileIdBothDirectoryInformation(PFILE_ID_BOTH_DIR_INFORMATION FileIdBothDirInfo, PFLT_FILE_NAME_INFORMATION FltFileNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE, IsMatched = FALSE;
@@ -817,6 +832,7 @@ NTSTATUS CleanFileIdBothDirectoryInformation(PFILE_ID_BOTH_DIR_INFORMATION FileI
 
 NTSTATUS CleanFileNamesInformation(PFILE_NAMES_INFORMATION FileNamesInfo, PFLT_FILE_NAME_INFORMATION FltNameInfo)
 {
+	PAGED_CODE();
 	NTSTATUS Status;
 	UNICODE_STRING TempStr;
 	BOOLEAN IsLoop = TRUE;
